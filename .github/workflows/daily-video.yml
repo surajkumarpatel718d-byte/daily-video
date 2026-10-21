@@ -1,3 +1,4 @@
+
 name: daily-video
 
 on:
@@ -11,9 +12,9 @@ permissions:
 jobs:
   make-videos:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 300
     env:
-      NICHE: ${{ vars.NICHE }}
+      LANGUAGE: ${{ vars.LANGUAGE || 'English' }}
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       GH_TOKEN: ${{ github.token }}
       UPLIKA_TOKEN: ${{ secrets.UPLIKA_TOKEN }}
@@ -26,16 +27,34 @@ jobs:
           npm install -g @anthropic-ai/claude-code
           git clone https://github.com/calesthio/OpenMontage.git
           cd OpenMontage && make setup
-          mkdir -p ../out
+          mkdir -p out
+          touch topics_done.txt
 
-      - name: Make the short and the long video
-        working-directory: OpenMontage
+      - name: Make today's short and long video
         run: |
-          COMMON="Work fully unattended: approve every checkpoint and gate yourself, do not wait for me. Use only free tools (Piper narration, free stock footage and open archives) unless a provider key is present in the environment. Stay under the budget cap and run the post-render self-review. Pick today's topic yourself in this niche: ${NICHE}. Never repeat a topic listed in ../topics_done.txt and append today's topic to it. Copy the final render to"
-          claude -p "Make a ~45-second vertical 9:16 video. $COMMON ../out/short.mp4. Also write ../out/short.txt with a title under 100 characters on line 1 and a description after it." \
+          case "$(date -u +%u)" in
+            1) NICHE="Psychology and the human mind: behaviour, dark psychology awareness, love and relationships, memory and dreams, cognitive biases, body language, habits";;
+            2) NICHE="Space and astronomy: black holes, planets and moons, galaxies, alien life, space exploration, what-if space scenarios";;
+            3) NICHE="Unsolved mysteries: historical mysteries, disappearances, ancient civilizations, unexplained signals. Clearly separate verified facts from speculation and paranormal claims";;
+            4) NICHE="Mind-blowing facts: animals, Earth, ocean mysteries, everyday science, world records, facts that sound impossible but are true";;
+            5) NICHE="Human body and biology: brain, sleep, senses, heart, genetics, evolution, survival abilities";;
+            6) NICHE="AI and future technology: AI, humanoid robots, future inventions, space tech, VR, future cities";;
+            7) NICHE="your choice of: psychology, space, mysteries, mind-blowing facts, human body, or AI technology";;
+          esac
+          COMMON="in ${LANGUAGE}. Style: cinematic visuals, engaging narration, word-level captions, music and sound effects. Work fully unattended: approve every checkpoint and gate yourself, do not wait for me. Use only free tools (Piper narration, free stock footage and open archives) unless a provider key is in the environment. Stay under the budget cap and run the post-render self-review. Today's niche: ${NICHE}. Pick one specific topic. Never repeat a topic listed in ../topics_done.txt and append today's topic to it."
+          cd OpenMontage
+          claude -p "Make ONE vertical 9:16 YouTube Short, 30 to 60 seconds, $COMMON Copy the final render to ../out/short.mp4. Also write ../out/short.txt with a title under 100 characters on line 1 and a short description after it." \
             --allowedTools "Bash,Read,Write,Edit" || echo "short failed"
-          claude -p "Make a ~5-minute landscape 16:9 video. $COMMON ../out/long.mp4. Also write ../out/long.txt with a title under 100 characters on line 1 and a description after it." \
+          claude -p "Make ONE landscape 16:9 YouTube video, about 5 minutes, $COMMON Use a different topic from the short you just made. Copy the final render to ../out/long.mp4. Also write ../out/long.txt with a title under 100 characters on line 1 and a description after it." \
             --allowedTools "Bash,Read,Write,Edit" || echo "long failed"
+
+      - name: Remember today's topics
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add topics_done.txt || true
+          git commit -m "topics done" || true
+          git push || true
 
       - name: Save to a GitHub Release (public URLs)
         run: |
@@ -49,5 +68,5 @@ jobs:
           TAG="videos-$(date +%F)"
           BASE="https://github.com/${{ github.repository }}/releases/download/$TAG"
           claude mcp add --transport http uplika https://api.uplika.com/mcp --header "Authorization: Bearer $UPLIKA_TOKEN"
-          claude -p "Using uplika: for each of short and long, take the file URL $BASE/short.mp4 and $BASE/long.mp4 (media_from_url, aiGenerated true), read the title and description from out/short.txt and out/long.txt, and publish each to my YouTube channel with privacyStatus private. Reply with the post ids." \
+          claude -p "Using uplika: for each of $BASE/short.mp4 and $BASE/long.mp4 (media_from_url, aiGenerated true), read the title and description from out/short.txt and out/long.txt, and publish it to my YouTube channel with privacyStatus private. Skip any file that does not exist. Reply with the post ids." \
             --allowedTools "Bash,Read,mcp__uplika"
